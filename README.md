@@ -1,5 +1,5 @@
-# rpt
-reverse proxy tunnel, 纯python实现的反向代理隧道
+# inpe
+纯python实现的内网穿透工具
 # usage
 1. 在内网服务器启动socks代理
 ```shell

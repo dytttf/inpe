@@ -8,6 +8,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 class SocketTunnelServer:
+    heartbeat_msg = b"Tb;\x0bM|sF*q Ew)\x0cOpSZr-C9!7XKkH\t"
+
     def create_socket(self, connect_addr=None, bind_addr=None, listen=False):
         socket_obj = socket(AF_INET, SOCK_STREAM)
         socket_obj.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
@@ -19,34 +21,50 @@ class SocketTunnelServer:
             socket_obj.listen(128)
         return socket_obj
 
-    def tunnel_worker(self, client, remote):
+    def exchange_loop(self, client, remote, heartbeat_socket=None):
+        client_peer = client.getpeername()
+        remote_peer = remote.getpeername()
+        chunk_size = 8192
         try:
             # 处理数据
             while 1:
-                data = None
-                r, w, e = select.select([client, remote], [], [])
+                recv_data = b""
+                r, w, e = select.select([client, remote], [], [client, remote], 30)
+                if e:
+                    break
                 if client in r:
-                    data = client.recv(4096)
-                    if data:
-                        remote.send(data)
+                    recv_data = client.recv(chunk_size)
+                    # print(f"client {client_peer}, {remote_peer} recv: {recv_data}")
+                    send_data = recv_data.replace(self.heartbeat_msg, b"")
+                    if send_data:
+                        remote.send(send_data)
                 if remote in r:
-                    data = remote.recv(4096)
-                    if data:
-                        client.send(data)
-                if not data:
+                    recv_data = remote.recv(chunk_size)
+                    # print(f"remote {client_peer}, {remote_peer} recv: {recv_data}")
+                    send_data = recv_data.replace(self.heartbeat_msg, b"")
+                    if send_data:
+                        client.send(send_data)
+                if not r:
+                    if heartbeat_socket:
+                        # 检测连接是否还活着
+                        heartbeat_socket.send(self.heartbeat_msg)
+                    continue
+                if not recv_data:
                     break
         except Exception as e:
             traceback.print_exc()
+        client.shutdown()
         client.close()
+        remote.shutdown()
         remote.close()
+        print(f"closed {client_peer}, {remote_peer}")
         return
 
     def run_inte(self, web_addr="", max_thread=100, **kwargs):
         # 外网服务地址
         if web_addr:
             web_addr = web_addr.split(":")
-            web_addr[1] = int(web_addr[1])
-            web_addr = tuple(web_addr)
+            web_addr = (web_addr[0], int(web_addr[1]))
         else:
             web_addr = ("127.0.0.1", 9999)
         # 内网socks地址
@@ -55,33 +73,29 @@ class SocketTunnelServer:
 
         pool = ThreadPoolExecutor(max_workers=max_thread)
         while 1:
-            server_socket = self.create_socket(connect_addr=web_addr)
+            web_socket = self.create_socket(connect_addr=web_addr)
             socks_socket = self.create_socket(connect_addr=socks_addr)
-            pool.submit(self.tunnel_worker, server_socket, socks_socket)
-
-        return
+            pool.submit(self.exchange_loop, web_socket, socks_socket, web_socket)
 
     def run_web(self, max_thread=100, **kwargs):
         #
         proxy_connect_addr = ("", 9999)
         client_connect_addr = ("", 8888)
         #
-        server_for_proxy_socket = self.create_socket(
+        proxy_connect_socket = self.create_socket(
             bind_addr=proxy_connect_addr, listen=True
         )
-        server_for_client_socket = self.create_socket(
+        client_connect_socket = self.create_socket(
             bind_addr=client_connect_addr, listen=True
         )
         print("web starting")
         #
         pool = ThreadPoolExecutor(max_workers=max_thread)
-        #
         while 1:
             # 接收连接
-            proxy_socket, proxy_addr = server_for_proxy_socket.accept()
-            client_socket, client_addr = server_for_client_socket.accept()
-            pool.submit(self.tunnel_worker, client_socket, proxy_socket)
-        return
+            proxy_socket, proxy_addr = proxy_connect_socket.accept()
+            client_socket, client_addr = client_connect_socket.accept()
+            pool.submit(self.exchange_loop, client_socket, proxy_socket, proxy_socket)
 
     def serve_forever(self, func, **kwargs):
         while 1:
@@ -90,7 +104,6 @@ class SocketTunnelServer:
             except Exception as e:
                 traceback.print_exc()
             time.sleep(10)
-        return
 
 
 def get_cmd_args():
@@ -98,7 +111,6 @@ def get_cmd_args():
         prog="Program Name (default: sys.argv[0])",
         add_help=True,
     )
-    # 私募基金
     parser.add_argument("--web", action="store_true", help="")
     parser.add_argument("--inte", action="store_true", help="")
     parser.add_argument("--web-addr", action="store", default="", help="")
