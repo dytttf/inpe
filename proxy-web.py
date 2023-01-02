@@ -36,17 +36,19 @@ class SocketTunnelServer:
                     recv_data = client.recv(chunk_size)
                     # print(f"client {client_peer}, {remote_peer} recv: {recv_data}")
                     send_data = recv_data.replace(self.heartbeat_msg, b"")
+                    # 心跳数据是需要抛弃的 不需要响应
                     if send_data:
                         remote.send(send_data)
                 if remote in r:
                     recv_data = remote.recv(chunk_size)
                     # print(f"remote {client_peer}, {remote_peer} recv: {recv_data}")
                     send_data = recv_data.replace(self.heartbeat_msg, b"")
+                    # 心跳数据是需要抛弃的 不需要响应
                     if send_data:
                         client.send(send_data)
                 if not r:
                     if heartbeat_socket:
-                        # 检测连接是否还活着
+                        # 心跳 检测连接是否还活着
                         heartbeat_socket.send(self.heartbeat_msg)
                     continue
                 if not recv_data:
@@ -61,6 +63,17 @@ class SocketTunnelServer:
         return
 
     def run_inte(self, web_addr="", max_thread=100, **kwargs):
+        """
+            内网服务
+                主动发起链接
+        Args:
+            web_addr:
+            max_thread:
+            **kwargs:
+
+        Returns:
+
+        """
         # 外网服务地址
         if web_addr:
             web_addr = web_addr.split(":")
@@ -78,6 +91,16 @@ class SocketTunnelServer:
             pool.submit(self.exchange_loop, web_socket, socks_socket, web_socket)
 
     def run_web(self, max_thread=100, **kwargs):
+        """
+            公网服务
+                被动接收链接
+        Args:
+            max_thread:
+            **kwargs:
+
+        Returns:
+
+        """
         #
         proxy_connect_addr = ("", 9999)
         client_connect_addr = ("", 8888)
