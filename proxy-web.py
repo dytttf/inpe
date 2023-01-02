@@ -64,7 +64,7 @@ class SocketTunnelServer:
             # 处理数据
             while 1:
                 recv_data = b""
-                r, w, e = select.select([client, remote], [], [client, remote], 20)
+                r, w, e = select.select([client, remote], [], [client, remote], 30)
                 if e:
                     break
                 if client in r:
@@ -131,9 +131,9 @@ class SocketTunnelServer:
             web_addr = web_addr.split(":")
             web_addr = (web_addr[0], int(web_addr[1]))
         else:
-            web_addr = ("", 9999)
+            web_addr = ("127.0.0.1", 9999)
         # 内网socks地址
-        socks_addr = ("", 9011)
+        socks_addr = ("127.0.0.1", 9011)
         logger.debug("inte restarting")
 
         pool = ThreadPoolExecutor(max_workers=max_thread)
