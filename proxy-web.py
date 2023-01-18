@@ -153,6 +153,8 @@ class SocketTunnelServer:
         Returns:
 
         """
+        start = time.time()
+        max_life = kwargs.get("max_life", 0)
         #
         proxy_connect_addr = ("", 9999)
         client_connect_addr = ("", 8888)
@@ -168,6 +170,9 @@ class SocketTunnelServer:
         pool = ThreadPoolExecutor(max_workers=max_thread)
         try:
             while 1:
+                if max_life > 0 and time.time() - start > max_life:
+                    logger.info("最大持续时间到达，主动停止")
+                    break
                 # 接收连接
                 proxy_socket, proxy_addr = proxy_connect_socket.accept()
                 if "raddr" not in str(proxy_socket):
@@ -180,12 +185,20 @@ class SocketTunnelServer:
                 pool.submit(
                     self.exchange_loop, client_socket, proxy_socket, proxy_socket
                 )
+                time.sleep(0.5)
         except Exception as e:
-            pool.shutdown(wait=False, cancel_futures=True)
             raise e
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+
 
     def serve_forever(self, func, **kwargs):
+        start = time.time()
+        max_life = kwargs.get("max_life", 0)
         while 1:
+            if max_life > 0 and time.time() - start > max_life:
+                logger.info("最大持续时间到达，主动停止")
+                break
             try:
                 func(**kwargs)
             except Exception as e:
@@ -202,6 +215,9 @@ def get_cmd_args():
     parser.add_argument("--inte", action="store_true", help="")
     parser.add_argument("--web-addr", action="store", default="", help="")
     parser.add_argument("--max-thread", action="store", default="100", help="")
+    parser.add_argument(
+        "--max-life", action="store", default="0", help="最大存活时间 单位 s 避免浪费流量"
+    )
     return parser.parse_args()
 
 
@@ -210,9 +226,10 @@ def main():
     sts = SocketTunnelServer()
     #
     max_thread = int(args.max_thread)
+    max_life = int(args.max_life)
     #
     if args.web:
-        sts.serve_forever(sts.run_web, max_thread=max_thread)
+        sts.serve_forever(sts.run_web, max_thread=max_thread, max_life=max_life)
     elif args.inte:
         sts.serve_forever(sts.run_inte, web_addr=args.web_addr, max_thread=max_thread)
     return
