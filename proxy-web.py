@@ -112,7 +112,7 @@ class SocketTunnelServer:
                 self.exchange_loop(web_socket, socks_socket, web_socket)
             except Exception as e:
                 logger.exception(e)
-                time.sleep(1)
+                time.sleep(10)
 
     def run_inte(self, web_addr="", max_thread=100, **kwargs):
         """
@@ -157,7 +157,7 @@ class SocketTunnelServer:
         max_life = kwargs.get("max_life", 0)
         #
         proxy_connect_addr = ("", 9999)
-        client_connect_addr = ("", 8888)
+        client_connect_addr = ("", 8887)
         #
         proxy_connect_socket = self.create_socket(
             bind_addr=proxy_connect_addr, listen=True
@@ -167,14 +167,17 @@ class SocketTunnelServer:
         )
         logger.debug("web starting")
         #
+        proxy_connect_count = 0
+        client_connect_count = 0
         pool = ThreadPoolExecutor(max_workers=max_thread)
         try:
             while 1:
-                if max_life > 0 and time.time() - start > max_life:
+                if 0 < max_life < time.time() - start:
                     logger.info("最大持续时间到达，主动停止")
                     break
                 # 接收连接
                 proxy_socket, proxy_addr = proxy_connect_socket.accept()
+                proxy_connect_count += 1
                 if "raddr" not in str(proxy_socket):
                     try:
                         proxy_socket.close()
@@ -182,8 +185,13 @@ class SocketTunnelServer:
                         logger.exception(e)
                     continue
                 client_socket, client_addr = client_connect_socket.accept()
+                client_connect_count += 1
                 pool.submit(
                     self.exchange_loop, client_socket, proxy_socket, proxy_socket
+                )
+                print(
+                    f"proxy_connect_count:{proxy_connect_count}, client_connect_count:{client_connect_count}",
+                    end="",
                 )
                 time.sleep(0.5)
         except Exception as e:
@@ -191,12 +199,11 @@ class SocketTunnelServer:
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
 
-
     def serve_forever(self, func, **kwargs):
         start = time.time()
         max_life = kwargs.get("max_life", 0)
         while 1:
-            if max_life > 0 and time.time() - start > max_life:
+            if 0 < max_life < time.time() - start:
                 logger.info("最大持续时间到达，主动停止")
                 break
             try:
@@ -216,7 +223,7 @@ def get_cmd_args():
     parser.add_argument("--web-addr", action="store", default="", help="")
     parser.add_argument("--max-thread", action="store", default="100", help="")
     parser.add_argument(
-        "--max-life", action="store", default="0", help="最大存活时间 单位 s 避免浪费流量"
+        "--max-life", action="store", default="3600", help="最大存活时间 单位 s 避免浪费流量"
     )
     return parser.parse_args()
 
